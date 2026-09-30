@@ -2,10 +2,10 @@
 //
 // 架构(已按真实环境修正):
 //
-//	X  --(cloudflared access ssh)-->  oracle_4:22        ← 唯一的出站,SSH 裹在 TLS 里
-//	oracle_4 上挂 127.0.0.1:2222                          ← 不需要 GatewayPorts
-//	你 --ProxyJump--> oracle_4 --> 127.0.0.1:2222
-//	    ↑ oracle_4 的 sshd 通过【已存在的连接】开 forwarded-tcpip 回到 X
+//	X  --(cloudflared access ssh)-->  中转主机:22          ← 唯一的出站,SSH 裹在 TLS 里
+//	中转主机上挂 127.0.0.1:2222                            ← 不需要 GatewayPorts
+//	你 --ProxyJump--> 中转主机 --> 127.0.0.1:2222
+//	    ↑ 中转主机的 sshd 通过【已存在的连接】开 forwarded-tcpip 回到 X
 //	    ↑ X 侧 xgate 不做任何 socket 连接,直接在进程内这条 net.Conn 上跑内嵌 sshd
 //
 // X 的网卡上从头到尾只有一条到 Cloudflare 的 TLS。SSH 协议只活在

@@ -9,14 +9,14 @@
 xgate 跳过了这一步：
 
 - X **主动**通过 `cloudflared access ssh` 出站，SSH 协议裹在 TLS 里，DPI 放行
-- 在目标主机（oracle_4）上挂一个反向端口
+- 在中转主机上挂一个反向端口
 - 外来连接经 `forwarded-tcpip` 通道**顺着已有连接的内存管道**回到 X
 - xgate **不 `net.Dial`、不 `net.Listen`**，直接在这条内存 `net.Conn` 上跑内嵌 SSH 服务端
 
 于是 SSH 协议只存在于两个地方：TLS 密文里（出站）和 xgate 进程堆内存里（抓不到包）。netfilter/DPI 无从 reset。
 
 ```
-[你] ──ssh -J──▶ [oracle_4 :2222] ═══TLS═══▶ [X: xgate 进程内 sshd]
+[你] ──ssh -J──▶ [中转主机 :2222] ═══TLS═══▶ [X: xgate 进程内 sshd]
                      │                        (不碰任何 socket)
                      └── 反向端口(127.0.0.1) ──┘
 ```
