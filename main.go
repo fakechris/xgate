@@ -46,9 +46,8 @@ var (
 	reverseBind = flag.String("reverse-bind", "127.0.0.1", "反向端口绑定地址(默认仅本机,免 GatewayPorts)")
 	hostKeyPath = flag.String("host-key", defaultXgatePath("host_key"), "内嵌 sshd host key")
 	akPath      = flag.String("authorized-keys", defaultXgatePath("authorized_keys"), "内嵌 sshd 授权公钥")
-	cfBin       = flag.String("cloudflared", "cloudflared", "cloudflared 可执行文件路径")
+	cfBin       = flag.String("cloudflared", "", "cloudflared 可执行文件路径(默认自动探测:./、PATH、常见安装位置)")
 	keepalive   = flag.Duration("keepalive", 30*time.Second, "出站 SSH 保活间隔")
-	verbose     = flag.Bool("v", false, "打印 cloudflared 原始输出")
 )
 
 func defaultIdPath() string {
@@ -105,10 +104,50 @@ type pipeAddr struct{}
 func (pipeAddr) Network() string { return "pipe" }
 func (pipeAddr) String() string  { return "cloudflared" }
 
+// resolveCloudflared 定位 cloudflared 可执行文件。
+// 优先级:显式 --cloudflared > 当前目录 ./cloudflared > PATH > 常见安装位置。
+// 沙箱常常没有 PATH、没有 root,二进制就摆在当前目录,所以必须查 ./
+func resolveCloudflared() (string, error) {
+	// 显式指定:原样使用,即使不存在也交给用户看错误
+	if *cfBin != "" && *cfBin != "cloudflared" {
+		if _, err := os.Stat(*cfBin); err != nil {
+			return "", fmt.Errorf("指定的 cloudflared 不存在或不可读: %s", *cfBin)
+		}
+		return *cfBin, nil
+	}
+
+	// 候选顺序:先当前目录(沙箱最常见),再 PATH,再常见位置
+	candidates := []string{
+		"./cloudflared",
+		"./cloudflared-linux-amd64",
+		"./cloudflared-linux-arm64",
+		"/usr/local/bin/cloudflared",
+		"/usr/bin/cloudflared",
+		"/snap/bin/cloudflared",
+	}
+	// PATH 里的
+	if p, err := exec.LookPath("cloudflared"); err == nil {
+		candidates = append([]string{p}, candidates...)
+	}
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() && fi.Mode()&0111 != 0 {
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf(
+		"找不到可执行的 cloudflared(已查找: %s 与 PATH)。\n"+
+			"请用 --cloudflared <路径> 指定,例如 --cloudflared ./cloudflared",
+		strings.Join(candidates, ", "))
+}
+
 // dialCloudflared 启动 `cloudflared access ssh --hostname <h>`,
 // 返回的 conn 上跑的字节流就是目标主机 22 端口的 SSH 协议。
 func dialCloudflared(host string) (net.Conn, error) {
-	cmd := exec.Command(*cfBin, "access", "ssh", "--hostname", host)
+	bin, err := resolveCloudflared()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(bin, "access", "ssh", "--hostname", host)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -118,12 +157,10 @@ func dialCloudflared(host string) (net.Conn, error) {
 		return nil, err
 	}
 	cmd.Stderr = os.Stderr
-	if *verbose {
-		cmd.Stderr = os.Stderr
-	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("启动 %s 失败: %w", *cfBin, err)
+		return nil, fmt.Errorf("启动 %s 失败: %w", bin, err)
 	}
+	log.Printf("传输层: %s", bin)
 	return &pipeConn{r: stdout, w: stdin, cmd: cmd, closed: make(chan struct{})}, nil
 }
 

@@ -58,7 +58,18 @@ cat ~/.ssh/id_ed25519.pub > ~/.xgate/authorized_keys
   --reverse-port 2222
 ```
 
-`--cloudflared` 可指定 cloudflared 路径（默认 `cloudflared`）。
+`--cloudflared` 可指定 cloudflared 路径。
+
+**不需要 root，也不需要 sudo。** xgate 完全以当前用户身份运行。
+
+如果 `cloudflared` 就在当前目录（`./cloudflared`），xgate 会**自动找到它**，无需任何额外参数——探测顺序为：
+
+1. 显式 `--cloudflared <路径>`
+2. `./cloudflared`（及 `./cloudflared-linux-{amd64,arm64}`）
+3. `PATH`
+4. `/usr/local/bin`、`/usr/bin`、`/snap/bin`
+
+只有在全都找不到时才会报错，并列出已查找的位置。
 
 ### 4. 从你的机器连回去
 
@@ -77,7 +88,7 @@ ssh -J <user>@<target-host> -p 2222 <x上的用户名>@127.0.0.1
 | `--reverse-bind` | `127.0.0.1` | 反向端口绑定地址（仅本机，免 GatewayPorts） |
 | `--host-key` | `~/.xgate/host_key` | 内嵌 sshd host key |
 | `--authorized-keys` | `~/.xgate/authorized_keys` | 授权公钥 |
-| `--cloudflared` | `cloudflared` | cloudflared 可执行文件 |
+| `--cloudflared` | 自动探测 | cloudflared 路径（留空则依次查找 `./`、PATH、常见安装位置） |
 | `--keepalive` | `30s` | 出站保活间隔 |
 | `-v` | `false` | 打印 cloudflared 原始输出 |
 
